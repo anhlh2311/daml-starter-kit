@@ -1,4 +1,4 @@
-# DAML Starter Kit: Canton Token Standard (CIP-56) Educational Materials
+# Build a DEX with DAML: Mastering the Canton Token Standard (CIP-56)
 
 ## Course Overview
 
@@ -24,14 +24,14 @@ If you have experience with EVM smart contract development, check out our
 
 - Basic programming knowledge (any language)
 - Familiarity with functional programming concepts (helpful but not required)
-- DAML SDK installed (version 3.4.x or higher)
+- DAML SDK installed (version 3.4.x or higher) - [Installation Guide](https://docs.digitalasset.com/build/3.4/component-howtos/smart-contracts/index.html)
 
 ## Course Structure
 
 ### Part 1: DAML Foundations (Modules 1-3)
 
 | Module | Title | Estimated Time |
-|--------|-------|----------------|
+| ------ | ----- | -------------- |
 | [Module 1](docs/module-01-daml-fundamentals.md) | DAML Fundamentals | 2-3 hours |
 | [Module 2](docs/module-02-choices-and-interactions.md) | Choices and Contract Interactions | 3-4 hours |
 | [Module 3](docs/module-03-testing-in-daml.md) | Testing in DAML | 2-3 hours |
@@ -39,14 +39,14 @@ If you have experience with EVM smart contract development, check out our
 ### Part 2: Canton Token Standard (Modules 4-5)
 
 | Module | Title | Estimated Time |
-|--------|-------|----------------|
+| ------ | ----- | -------------- |
 | [Module 4](docs/module-04-cip56-fundamentals.md) | Canton Token Standard (CIP-56) Fundamentals | 4-5 hours |
 | [Module 5](docs/module-05-dvp-settlement-patterns.md) | DVP Settlement Patterns | 3-4 hours |
 
 ### Part 3: Advanced Integration (Modules 6-8)
 
 | Module | Title | Estimated Time |
-|--------|-------|----------------|
+| ------ | ----- | -------------- |
 | [Module 6](docs/module-06-amulet-token-integration.md) | Amulet Token Integration | 3-4 hours |
 | [Module 7](docs/module-07-interface-based-design.md) | Interface-Based Design | 2-3 hours |
 | [Module 8](docs/module-08-faam-integration.md) | FAAM Integration | 2-3 hours |
@@ -54,7 +54,7 @@ If you have experience with EVM smart contract development, check out our
 ### Part 4: Production and Capstone (Modules 9-10)
 
 | Module | Title | Estimated Time |
-|--------|-------|----------------|
+| ------ | ----- | -------------- |
 | [Module 9](docs/module-09-production-patterns.md) | Production Patterns and Best Practices | 2-3 hours |
 | [Module 10](docs/module-10-capstone-project.md) | Capstone Project | 8-12 hours |
 
@@ -177,7 +177,7 @@ flowchart LR
 ### When to Use Which Pattern
 
 | Scenario | Recommended Pattern |
-|----------|---------------------|
+| -------- | ------------------- |
 | Learning DVP fundamentals | Off-Chain Price Discovery |
 | OTC/negotiated trades | Off-Chain Price Discovery |
 | Market maker with fixed quotes | On-Chain Price Quoting |
@@ -188,7 +188,7 @@ flowchart LR
 Each module includes practical exercises. Total: **28 exercises + 1 capstone project**
 
 | Module | Exercises | Difficulty |
-|--------|-----------|------------|
+| ------ | --------- | ---------- |
 | 1 | 3 | Beginner |
 | 2 | 3 | Beginner |
 | 3 | 3 | Beginner |
@@ -249,14 +249,17 @@ All code examples in these materials:
 
 ### Official Documentation
 
-- [DAML Documentation](https://docs.daml.com/)
+- [DAML Documentation](https://docs.digitalasset.com/build/3.4/)
 - [Canton Network Documentation](https://docs.canton.network/)
-- [CIP-56 Token Standard](https://docs.canton.network/canton-network/token-standard/)
+- [CIP-56 Token Standard](https://github.com/canton-foundation/cips/blob/main/cip-0056/cip-0056.md)
+- [What is CIP-56 Token Standard](https://www.canton.network/blog/what-is-cip-56-a-guide-to-cantons-token-standard)
+- [Splice](https://hyperledger-labs.github.io/splice/)
 
 ### Community
 
 - [DAML Forum](https://discuss.daml.com/)
-- [Canton Network Discord](https://discord.com/invite/canton-network)
+- [Canton Network Discord](https://discord.gg/RHV8vyXj)
+- [Canton Network Telegram](https://t.me/CantonNetwork1)
 
 ## Feedback
 

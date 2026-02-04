@@ -210,7 +210,7 @@ deriving (Show, Eq)
 ```
 
 | Derived Instance | Provides |
-|-----------------|----------|
+|------------------|----------|
 | `Show` | String representation for debugging |
 | `Eq` | Equality comparison (`==`, `/=`) |
 | `Ord` | Ordering comparison (`<`, `>`, `<=`, `>=`) |

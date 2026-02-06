@@ -197,10 +197,10 @@ Example:
 
 ```haskell
 -- Query contracts by interface
-trader1AllocResult <- queryInterface @AllocationV1.Allocation roles.trader
+allocations <- queryInterface @Allocation provider.primaryParty
 
 -- Query specific contract by ID
-swapSettlementContract <- fromSome <$> queryContractId @SwapSettlement roles.liquidityProvider swapSettlementCid1
+Some escrow <- queryContractId @Escrow provider.primaryParty escrowCid
 ```
 
 ### Debug Output
@@ -237,149 +237,195 @@ when (isLeft result) do
 
 ## 3.5 Test Configuration Patterns
 
-### Configuration Types
+Using configuration types makes tests reusable and easier to maintain.
 
-Pattern:
+### Simple Configuration Type
 
 ```haskell
-data BaseConfig = BaseConfig with
-  roles: OptionalPartyRoles
-  quotes: [Decimal]
-  inputAmount: Decimal
+-- Configuration for escrow tests
+data EscrowTestConfig = EscrowTestConfig with
+  buyerName: Text
+  sellerName: Text
+  escrowAmount: Decimal
+  description: Text
+    deriving (Show, Eq)
 
-data TestConfig = TestConfig with
-  base: BaseConfig
-  providedHoldingAmounts: [Decimal]
-  desiredHoldingAmounts: [Decimal]
-
-data AppConfig = AppConfig with
-  base: BaseConfig
-  provided: InstrumentConfig PartyRef InstrumentRef
-  desired: InstrumentConfig PartyRef InstrumentRef
-  useAmuletTapLockedFunds: Bool
+-- Default configuration
+defaultEscrowConfig : EscrowTestConfig
+defaultEscrowConfig = EscrowTestConfig with
+  buyerName = "buyer"
+  sellerName = "seller"
+  escrowAmount = 1000.0
+  description = "Test escrow"
 ```
 
-### Using Configuration in Tests
+### Test Preset Pattern
 
-Example:
+A preset bundles all the setup results together:
 
 ```haskell
-exchangeWithPriceQuote: Script ()
-exchangeWithPriceQuote = do
-  let testConfig: TestConfig = TestConfig with {
-    base = BaseConfig with {
-      roles = PartyRoles with {
-        liquidityProvider = None,  -- Will be allocated
-        trader = None,             -- Will be allocated
-        appProvider = None,
-        executor = None
-      },
-      quotes = [0.05],
-      inputAmount = 100.0
-    },
-    providedHoldingAmounts = [12000.0],
-    desiredHoldingAmounts = [1000.0]
-  }
+-- Preset containing all test setup results
+data EscrowTestPreset = EscrowTestPreset with
+  buyer: Party
+  seller: Party
+  arbiter: Party
+  escrowCid: ContractId Escrow
+    deriving (Show, Eq)
 
-  (AppPresetLightweight {..}, config) <- initializeAppLightweight testConfig
+-- Setup function creates the preset
+setupEscrowTest : EscrowTestConfig -> Script EscrowTestPreset
+setupEscrowTest config = do
+  -- Allocate parties
+  buyer <- allocateParty config.buyerName
+  seller <- allocateParty config.sellerName
+  arbiter <- allocateParty "arbiter"
+
+  -- Create initial escrow contract
+  escrowCid <- submit buyer do
+    createCmd Escrow with
+      buyer
+      seller
+      arbiter
+      amount = config.escrowAmount
+      description = config.description
+
+  pure EscrowTestPreset with ..
 ```
 
-### Preset Patterns
-
-**Lightweight Preset** - For simple tests:
-
-Pattern:
+### Using Presets in Tests
 
 ```haskell
-data AppPresetLightweight = AppPresetLightweight with
-  roles: ExpandedRoles
-  instruments: Instruments
-  holdings: Holdings
-  allocationFactories: AllocationFactories
-  providedAdmin: Party
-  desiredAdmin: Party
+testEscrowRelease : Script ()
+testEscrowRelease = do
+  -- Setup with default config
+  preset <- setupEscrowTest defaultEscrowConfig
+
+  -- Use the preset
+  submit preset.buyer do
+    exerciseCmd preset.escrowCid Release
+
+  -- Verify escrow is archived
+  result <- queryContractId preset.buyer preset.escrowCid
+  result === None
 ```
 
-**Expanded Preset** - For full integration tests:
+### Parameterized Tests
 
-Pattern:
+Run the same test with different configurations:
 
 ```haskell
-data AppPresetExpanded = AppPresetExpanded with
-  roles: ExpandedRoles
-  instruments: Instruments
-  holdings: Holdings
-  allocationFactories: AllocationFactories
-  providedAdmin: Party
-  desiredAdmin: Party
-  featuredAppRights: FeaturedAppRights
-  inputAmount: Decimal
-  quotes: [Decimal]
-  priceQuoteCid: ContractId PriceQuote
-  amuletContext: Optional ChoiceContext
-  amuletDisclosures: Optional Disclosures'
-  svParties: [Party]
-  amuletApp: AmuletApp
-  amuletRegistry: AmuletRegistry.AmuletRegistry
+testMultipleAmounts : Script ()
+testMultipleAmounts = do
+  -- Test with different amounts
+  forA_ [100.0, 500.0, 1000.0] $ \amount -> do
+    let config = defaultEscrowConfig with escrowAmount = amount
+    preset <- setupEscrowTest config
+
+    -- Run test logic
+    submit preset.buyer do
+      exerciseCmd preset.escrowCid Release
+
+    debug $ "Test passed for amount: " <> show amount
 ```
 
 ---
 
 ## 3.6 Setup Functions
 
-### Initialization Patterns
+Setup functions create the test environment. Keep them simple and focused.
 
-**Lightweight Initialization:**
-
-Pattern:
+### Basic Party Setup
 
 ```haskell
--- | Lightweight setup for tests that only need PriceQuote creation
-initializeAppLightweight: TestConfig -> Script (AppPresetLightweight, AppConfig)
-initializeAppLightweight testConfig = do
-  appConfig@AppConfig {..} <- setupTest testConfig
-
-  expandedRoles@ExpandedRoles {..} <- expandRoles base.roles
-
-  -- Create only what's needed
-  holdingState <- setupHoldings appConfig expandedRoles None
-
-  -- Create the allocation factories
-  providedInstrumentAllocationFactoryCid <- createFungibleAllocationFactory providedAdmin None
-  desiredInstrumentAllocationFactoryCid <- createFungibleAllocationFactory desiredAdmin None
-
-  -- Create the simple test preset
-  let appPresetLightweight = AppPresetLightweight with
-        roles = expandedRoles
-        instruments = holdingState.instruments
-        -- ...
+-- Simple setup: just allocate parties
+setupParties : Script (Party, Party, Party)
+setupParties = do
+  alice <- allocateParty "Alice"
+  bob <- allocateParty "Bob"
+  charlie <- allocateParty "Charlie"
+  pure (alice, bob, charlie)
 ```
 
-**Full Infrastructure Initialization:**
-
-Pattern:
+### Setup with Initial Contracts
 
 ```haskell
--- | Initialize the app with full infrastructure
-initializeAppWithAmuletInfrastructure : AppConfig -> Script AppPresetExpanded
-initializeAppWithAmuletInfrastructure config = do
-  expandedRoles@ExpandedRoles{..} <- expandRoles config.base.roles
+-- Setup that creates initial state
+data TokenTestSetup = TokenTestSetup with
+  issuer: Party
+  holder: Party
+  tokenCid: ContractId Token
+    deriving (Show, Eq)
 
-  -- Setup DSO infrastructure and featured app rights
-  (svParties, amuletApp, amuletRegistry, featuredAppRights) <-
-    setupCommonInfrastruture [appProvider, liquidityProvider, executor, trader] None
+setupTokenTest : Decimal -> Script TokenTestSetup
+setupTokenTest initialAmount = do
+  issuer <- allocateParty "Issuer"
+  holder <- allocateParty "Holder"
 
-  -- Setup holdings
-  holdingState <- setupHoldings config expandedRoles (Some amuletRegistry)
+  -- Create initial token
+  tokenCid <- submitMulti [issuer, holder] [] do
+    createCmd Token with
+      issuer
+      owner = holder
+      amount = initialAmount
 
-  -- Create allocation factories
-  (allocationFactories, amuletContextOpt, amuletDisclosuresOpt) <-
-    createAllocationFactories config expandedRoles amuletRegistry
+  pure TokenTestSetup with ..
+```
 
-  -- Create market quote
-  priceQuoteCid <- createPriceQuoteWithProposal priceQuoteConfig
+### Factory Setup Pattern
 
-  pure AppPresetExpanded with ...
+For tests requiring a factory contract:
+
+```haskell
+data FactoryTestSetup = FactoryTestSetup with
+  admin: Party
+  users: [Party]
+  factoryCid: ContractId TokenFactory
+    deriving (Show, Eq)
+
+setupFactoryTest : Int -> Script FactoryTestSetup
+setupFactoryTest numUsers = do
+  admin <- allocateParty "Admin"
+
+  -- Allocate user parties
+  users <- forA [1..numUsers] $ \i ->
+    allocateParty ("User" <> show i)
+
+  -- Create factory
+  factoryCid <- submit admin do
+    createCmd TokenFactory with
+      admin
+      allowedMinters = users
+
+  pure FactoryTestSetup with ..
+```
+
+### Reusable Helper Functions
+
+```haskell
+-- Helper to create a token and return its CID
+createToken : Party -> Party -> Decimal -> Script (ContractId Token)
+createToken issuer owner amount = do
+  submitMulti [issuer, owner] [] do
+    createCmd Token with issuer, owner, amount
+
+-- Helper to transfer a token
+transferToken : Party -> ContractId Token -> Party -> Script (ContractId Token)
+transferToken currentOwner tokenCid newOwner = do
+  submit currentOwner do
+    exerciseCmd tokenCid Transfer with newOwner
+
+-- Use helpers in tests
+testTokenTransfer : Script ()
+testTokenTransfer = do
+  (alice, bob, _) <- setupParties
+
+  -- Create and transfer using helpers
+  tokenCid <- createToken alice alice 100.0
+  newTokenCid <- transferToken alice tokenCid bob
+
+  -- Verify
+  Some token <- queryContractId bob newTokenCid
+  token.owner === bob
 ```
 
 ---
@@ -390,76 +436,163 @@ initializeAppWithAmuletInfrastructure config = do
 
 ```haskell
 -- Query specific contract
-Some contract <- queryContractId @SwapSettlement roles.liquidityProvider swapSettlementCid
+Some contract <- queryContractId @Token holder tokenCid
 
 -- Access contract fields
-debug $ "Escrow Id: " <> show contract.escrowId
-debug $ "Created at: " <> show contract.createdAt
+debug $ "Owner: " <> show contract.owner
+debug $ "Amount: " <> show contract.amount
+```
+
+### Query by Template Type
+
+```haskell
+-- Query all contracts of a type visible to a party
+tokens <- query @Token holder
+
+-- Returns [(ContractId Token, Token)] pairs
+debug $ "Found " <> show (length tokens) <> " tokens"
+
+-- Access specific token
+case tokens of
+  [] -> debug "No tokens found"
+  (cid, token) :: _ -> debug $ "First token amount: " <> show token.amount
 ```
 
 ### Query by Interface
 
+Interfaces allow querying across multiple template types:
+
 ```haskell
 -- Query all contracts implementing an interface
-allocations <- queryInterface @AllocationV1.Allocation roles.trader
+assets <- queryInterface @Asset holder
 
--- Returns [(ContractId, View)] pairs
-```
-
-### Query Disclosure
-
-```haskell
--- Get disclosure for cross-party visibility
-disclosure <- fromSome <$> queryDisclosure @SwapFactory roles.executor factoryCid
+-- Returns [(ContractId Asset, AssetView)] pairs
+forA_ assets $ \(cid, view) ->
+  debug $ "Asset value: " <> show view.value
 ```
 
 ### Filter Query Results
 
-Example:
+```haskell
+-- Query and filter by condition
+allTokens <- query @Token holder
+let largeTokens = filter (\(_, t) -> t.amount > 100.0) allTokens
+
+debug $ "Large tokens: " <> show (length largeTokens)
+
+-- Find specific token
+let maybeToken = find (\(_, t) -> t.owner == alice) allTokens
+case maybeToken of
+  None -> debug "Token not found"
+  Some (cid, token) -> debug $ "Found token: " <> show token.amount
+```
+
+### Query with Optional Result
 
 ```haskell
--- Filter allocations by specific CID
-let trader1Allocation = map (\(cid, alloc) ->
-      fromSome (if cid == trader1AllocationCid then Some alloc else None)) trader1AllocResult
+-- queryContractId returns Optional
+result <- queryContractId @Token holder tokenCid
+
+case result of
+  None -> debug "Contract not found (may be archived)"
+  Some token -> debug $ "Found: " <> show token
 ```
 
 ---
 
-## 3.8 Balance Verification
+## 3.8 State Verification
 
-### Wallet Utils
+### Before/After Pattern
 
-Pattern:
+Verify state changes by comparing before and after:
 
 ```haskell
--- Check holdings and balances
-(traderHoldings, traderBalance) <- WalletUtils.checkHoldingsAndBalances
-  trader instrumentId expectedAmounts False
+testTransferChangesOwner : Script ()
+testTransferChangesOwner = do
+  (alice, bob, _) <- setupParties
 
--- List unlocked holdings
-unlockedHoldings <- WalletUtils.listUnlockedHoldings party instrumentId
+  -- Create token owned by Alice
+  tokenCid <- submitMulti [alice, bob] [] do
+    createCmd Token with
+      issuer = alice
+      owner = alice
+      amount = 100.0
 
--- Get specific balance types
-totalBalance <- WalletUtils.balanceOf party instrumentId
-unlockedBalance <- WalletUtils.unlockedBalanceOf party instrumentId
-lockedBalance <- WalletUtils.lockedBalanceOf party instrumentId
+  -- Verify initial state
+  Some tokenBefore <- queryContractId alice tokenCid
+  tokenBefore.owner === alice
+
+  -- Perform transfer
+  newTokenCid <- submit alice do
+    exerciseCmd tokenCid Transfer with newOwner = bob
+
+  -- Verify final state
+  Some tokenAfter <- queryContractId bob newTokenCid
+  tokenAfter.owner === bob
+  tokenAfter.amount === tokenBefore.amount  -- Amount unchanged
 ```
 
-### Before/After Verification
+### Counting Contracts
 
 ```haskell
--- Before swap
-(holdingsBefore, balanceBefore) <- WalletUtils.checkHoldingsAndBalances trader instrumentId amounts False
+testFactoryCreatesTokens : Script ()
+testFactoryCreatesTokens = do
+  admin <- allocateParty "Admin"
+  user <- allocateParty "User"
 
--- Perform swap
-submit trader do
-  exerciseCmd escrowCid Settle with ...
+  -- Count tokens before
+  tokensBefore <- query @Token user
+  let countBefore = length tokensBefore
 
--- After swap
-(holdingsAfter, balanceAfter) <- WalletUtils.checkHoldingsAndBalances trader instrumentId amounts False
+  -- Create token via factory
+  factoryCid <- submit admin do
+    createCmd TokenFactory with admin, allowedMinters = [user]
 
--- Verify change
-(balanceAfter - balanceBefore) === expectedChange
+  submit user do
+    exerciseCmd factoryCid MintToken with
+      owner = user
+      amount = 50.0
+
+  -- Count tokens after
+  tokensAfter <- query @Token user
+  let countAfter = length tokensAfter
+
+  -- Verify one new token created
+  countAfter === countBefore + 1
+```
+
+### Balance Verification Helper
+
+```haskell
+-- Helper to sum token amounts for a party
+getTokenBalance : Party -> Script Decimal
+getTokenBalance party = do
+  tokens <- query @Token party
+  let ownedTokens = filter (\(_, t) -> t.owner == party) tokens
+  pure $ sum $ map (\(_, t) -> t.amount) ownedTokens
+
+-- Use in tests
+testBalanceAfterTransfer : Script ()
+testBalanceAfterTransfer = do
+  (alice, bob, _) <- setupParties
+
+  -- Setup: Alice has 100, Bob has 0
+  tokenCid <- createToken alice alice 100.0
+
+  aliceBalanceBefore <- getTokenBalance alice
+  bobBalanceBefore <- getTokenBalance bob
+  aliceBalanceBefore === 100.0
+  bobBalanceBefore === 0.0
+
+  -- Transfer 100 from Alice to Bob
+  submit alice do
+    exerciseCmd tokenCid Transfer with newOwner = bob
+
+  -- Verify balances changed correctly
+  aliceBalanceAfter <- getTokenBalance alice
+  bobBalanceAfter <- getTokenBalance bob
+  aliceBalanceAfter === 0.0
+  bobBalanceAfter === 100.0
 ```
 
 ---
@@ -468,30 +601,27 @@ submit trader do
 
 ### Test File Structure
 
+A typical DAML project test structure:
+
 ```mermaid
 graph TD
-    A[my-dex-test/] --> B[daml/]
-    B --> C[Scripts/]
+    A[my-project/] --> B[daml/]
+    B --> C[Main/]
     B --> D[Tests/]
-    C --> E[AppSetup.daml]
-    C --> F[AppUtils.daml]
-    C --> G[Config/]
-    G --> H[AppConfig.daml]
-    D --> I[PriceQuote/]
-    D --> J[HoldingRebalancer/]
-    I --> K[ExchangeWithPriceQuote.daml]
-    I --> L[ExchangeWithPriceQuote_Amulet_Fungible.daml]
-    I --> M[PriceQuoteTest.daml]
-    J --> N[HoldingRebalancerTest.daml]
+    C --> E[Token.daml]
+    C --> F[Escrow.daml]
+    D --> G[TokenTest.daml]
+    D --> H[EscrowTest.daml]
+    D --> I[Setup.daml]
 ```
 
 ### Naming Conventions
 
 | Pattern | Example | Purpose |
 |---------|---------|---------|
-| `*Test.daml` | `PriceQuoteTest.daml` | Unit/integration tests |
-| `ExchangeWith*.daml` | `ExchangeWithPriceQuote.daml` | Full workflow tests |
-| `*_Amulet_*.daml` | `ExchangeWithPriceQuote_Amulet_Fungible.daml` | Specific token type tests |
+| `*Test.daml` | `TokenTest.daml` | Tests for a specific template |
+| `Test*.daml` | `TestHappyPath.daml` | Tests for a scenario |
+| `Setup.daml` | `Setup.daml` | Shared test setup functions |
 
 ### Test Categories
 

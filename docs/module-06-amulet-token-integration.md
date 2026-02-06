@@ -264,6 +264,8 @@ submit (actAs [roles.trader] <> discloseMany allDisclosures) do
 
 This section provides an in-depth look at how the Amulet infrastructure works under the hood.
 
+> **Note:** For advanced test infrastructure patterns including `AmuletApp`, `setupDefaultAppWithUsers`, and DSO governance initialization, see **Module 9: Production Patterns**, section 9.6.
+
 ### 6.7.1 AmuletRegistry Structure
 
 The `AmuletRegistry` is an off-ledger reference that points to the on-ledger Amulet contracts.
